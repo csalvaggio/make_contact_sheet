@@ -36,6 +36,7 @@ The main third-party dependencies are:
 
 - `opencv-python`
 - `Pillow`
+- `rawpy`
 
 ## Installation
 
