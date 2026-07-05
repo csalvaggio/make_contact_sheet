@@ -1,0 +1,9 @@
+__pycache__
+*.pyc
+*.ORIG
+*.SAVE
+.DS_Store
+
+venv/
+
+sheets/
