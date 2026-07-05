@@ -32,7 +32,7 @@ Third-party dependencies are:
 - `Pillow`
 - `rawpy`
 
-See `requirements.txt` for version details.
+See the file `requirements.txt` in the repository for version details.
 
 ## Installation
 
