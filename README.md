@@ -1,6 +1,6 @@
 # Make Contact Sheet
 
-A Python script to create a rendering of a traditional film contact sheet from a folder of images.
+A Python script to create an authentic rendering of a traditional film/negative contact sheet from a folder of images.
 
 The following standard image and camera RAW formats are currently supported:
 
