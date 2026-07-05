@@ -32,6 +32,8 @@ Third-party dependencies are:
 - `Pillow`
 - `rawpy`
 
+See `requirements.txt` for version details.
+
 ## Installation
 
 Clone the repository:
