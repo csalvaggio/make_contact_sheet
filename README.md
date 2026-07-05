@@ -2,6 +2,26 @@
 
 A Python script to create a rendering of a traditional film contact sheet from a folder of images.
 
+The following standard image and camera RAW formats are currently supported:
+
+| Extension | Description |
+| --- | --- |
+| .jpg | Joint Photographic Experts Group |
+| .jpeg | Joint Photographic Experts Group |
+| .png | Portable Network Graphics |
+| .tif | Tagged Image File Format |
+| .tiff | Tagged Image File Format |
+| .cr2 | Canon Raw (v.2) |
+| .cr3 | Canon Raw (v.3) |
+| .nef | Nikon Electronic Format |
+| .arw | Sony Alpha Raw |
+| .dng | Adobe Digital Negative |
+| .raf | Fujifile Raw |
+| .orf | Olympus Raw Format |
+| .rw2 | Panasonic Raw |
+| .pef | Pentax Electronic File |
+| .srw | Samsung Raw |
+
 ## Requirements
 
 This project requires Python 3.11 or newer.
