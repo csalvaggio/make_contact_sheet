@@ -1,5 +1,7 @@
 # Make Contact Sheet
 
+A Python script to create a rendering of a traditional film contact sheet from a folder of images.
+
 This project requires Python 3.11 or newer.
 
 Python packages are listed in `requirements.txt`:
