@@ -7,8 +7,15 @@ from typing import Sequence
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
+import rawpy
+
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
+
+RAW_EXTS = {".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf",
+            ".orf", ".rw2", ".pef", ".srw"}
+
+SUPPORTED_EXTS = IMAGE_EXTS | RAW_EXTS
 
 
 @dataclass(frozen=True)
@@ -142,8 +149,20 @@ def compute_layout(options: RenderOptions, geometry: Film35mmGeometry) -> SheetL
 
 
 def read_image(path: Path, options: RenderOptions) -> Image.Image:
-    img = Image.open(path)
-    img = ImageOps.exif_transpose(img).convert("RGB")
+    ext = path.suffix.lower()
+
+    if ext in RAW_EXTS:
+        with rawpy.imread(str(path)) as raw:
+            rgb = raw.postprocess(
+                use_camera_wb=True,
+                no_auto_bright=False,
+                gamma=(2.222, 4.5),      # power, toe slope
+                output_bps=8
+            )
+        img = Image.fromarray(rgb, mode="RGB")
+    else:
+        img = Image.open(path)
+        img = ImageOps.exif_transpose(img).convert("RGB")
 
     if options.rotate_portrait_ccw and img.height > img.width:
         img = img.rotate(90, expand=True)
@@ -491,7 +510,7 @@ def collect_images(image_dir: Path) -> list[Path]:
     return sorted(
         p
         for p in image_dir.iterdir()
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTS
+        if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
     )
 
 
