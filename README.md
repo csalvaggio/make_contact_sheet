@@ -57,6 +57,28 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
 ```
 
+## Image Ordering
+
+Images are normally placed on the contact sheet in alphabetical order by filename.
+
+For JPEG images containing the custom headshot-kiosk XMP metadata, the script can instead order the images by name. If every image in the input directory contains a non-empty `LastName` field, the images are sorted case-insensitively by:
+
+1. `LastName`
+2. `FirstName`
+3. filename
+
+The filename is used only as a final tie breaker when both the last name and first name are the same, or when the first name is not present.
+
+If one or more images do not contain a `LastName` field, the entire collection falls back to the original alphabetical filename ordering. This avoids mixing metadata-based and filename-based ordering within the same contact sheet set.
+
+The custom XMP fields use the headshot-kiosk namespace:
+
+```text
+https://www.rit.edu/ns/headshot-kiosk/1.0/
+```
+
+No additional third-party dependency is required for this feature.
+
 ## Documentation
 
 Full help/documentation may be viewed from the command line by typing:

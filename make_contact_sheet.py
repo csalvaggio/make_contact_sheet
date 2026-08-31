@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import argparse
 from typing import Sequence
+import xml.etree.ElementTree as ET
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
@@ -16,6 +17,9 @@ RAW_EXTS = {".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf",
             ".orf", ".rw2", ".pef", ".srw"}
 
 SUPPORTED_EXTS = IMAGE_EXTS | RAW_EXTS
+
+HEADSHOT_XMP_NAMESPACE = "https://www.rit.edu/ns/headshot-kiosk/1.0/"
+RDF_NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 
 
 @dataclass(frozen=True)
@@ -506,12 +510,77 @@ def make_sheet(
     sheet.save(output_path, quality=95)
 
 
+def read_xmp_name(path: Path) -> tuple[str | None, str | None]:
+    """Return the custom headshot-kiosk XMP LastName and FirstName values."""
+    try:
+        with Image.open(path) as img:
+            xmp = img.info.get("xmp")
+
+        if not xmp:
+            return None, None
+
+        if isinstance(xmp, str):
+            xmp = xmp.encode("utf-8")
+
+        root = ET.fromstring(xmp)
+        description_tag = f"{{{RDF_NAMESPACE}}}Description"
+        last_name_tag = f"{{{HEADSHOT_XMP_NAMESPACE}}}LastName"
+        first_name_tag = f"{{{HEADSHOT_XMP_NAMESPACE}}}FirstName"
+
+        for description in root.iter(description_tag):
+            # The headshot kiosk currently writes these values as RDF
+            # Description attributes, but also accept element forms.
+            last_name = description.attrib.get(last_name_tag)
+            first_name = description.attrib.get(first_name_tag)
+
+            if last_name is None:
+                element = description.find(last_name_tag)
+                if element is not None:
+                    last_name = element.text
+
+            if first_name is None:
+                element = description.find(first_name_tag)
+                if element is not None:
+                    first_name = element.text
+
+            if last_name is not None:
+                last_name = last_name.strip() or None
+
+            if first_name is not None:
+                first_name = first_name.strip() or None
+
+            return last_name, first_name
+
+    except (OSError, ET.ParseError, ValueError):
+        pass
+
+    return None, None
+
+
 def collect_images(image_dir: Path) -> list[Path]:
-    return sorted(
+    # Start with the script's original filename ordering.  If every image has
+    # the custom XMP LastName field, sort by LastName and then FirstName.
+    # Filename remains a final deterministic tie-breaker when both names match
+    # (or when FirstName is absent).
+    image_paths = sorted(
         p
         for p in image_dir.iterdir()
         if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
     )
+
+    names = {path: read_xmp_name(path) for path in image_paths}
+
+    if image_paths and all(names[path][0] is not None for path in image_paths):
+        return sorted(
+            image_paths,
+            key=lambda path: (
+                names[path][0].casefold(),
+                names[path][1].casefold() if names[path][1] is not None else "",
+                path.name.casefold(),
+            ),
+        )
+
+    return image_paths
 
 
 def parse_args() -> argparse.Namespace:
