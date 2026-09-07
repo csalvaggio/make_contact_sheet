@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 import argparse
 from typing import Sequence
@@ -22,31 +23,107 @@ HEADSHOT_XMP_NAMESPACE = "https://www.rit.edu/ns/headshot-kiosk/1.0/"
 RDF_NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 
 
+class FilmFormat(str, Enum):
+    MM35 = "35mm"
+    FILM_120_6X6 = "120-6x6"
+
+
 @dataclass(frozen=True)
-class Film35mmGeometry:
-    film_height_mm: float = 35.0
-    strip_length_mm: float = 240.0
+class SprocketGeometry:
+    pitch_mm: float
+    width_mm: float
+    height_mm: float
+    center_y_top_mm: float
+    first_center_x_mm: float = 3.0
 
-    frame_w_mm: float = 36.0
-    frame_h_mm: float = 24.0
-    frame_pitch_mm: float = 38.0
-    frame_start_x_mm: float = 8.0
 
-    perf_pitch_mm: float = 4.75
-    perf_w_mm: float = 2.8
-    perf_h_mm: float = 1.98
-    perf_center_y_top_mm: float = 2.35
+@dataclass(frozen=True)
+class FilmGeometry:
+    film_format: FilmFormat
+    film_height_mm: float
+    strip_length_mm: float
 
-    strips_per_sheet: int = 6
-    frames_per_strip: int = 6
+    frame_w_mm: float
+    frame_h_mm: float
+    frame_pitch_mm: float
+    frame_start_x_mm: float
 
-    @property
-    def perf_center_y_bottom_mm(self) -> float:
-        return self.film_height_mm - self.perf_center_y_top_mm
+    strips_per_sheet: int
+    frames_per_strip: int
+
+    default_film_name: str
+    sprockets: SprocketGeometry | None = None
 
     @property
     def frames_per_sheet(self) -> int:
         return self.strips_per_sheet * self.frames_per_strip
+
+
+def make_35mm_geometry() -> FilmGeometry:
+    return FilmGeometry(
+        film_format=FilmFormat.MM35,
+        film_height_mm=35.0,
+        strip_length_mm=240.0,
+        frame_w_mm=36.0,
+        frame_h_mm=24.0,
+        frame_pitch_mm=38.0,
+        frame_start_x_mm=8.0,
+        strips_per_sheet=6,
+        frames_per_strip=6,
+        default_film_name="KODAK SAFETY FILM 5035",
+        sprockets=SprocketGeometry(
+            pitch_mm=4.75,
+            width_mm=2.8,
+            height_mm=1.98,
+            center_y_top_mm=2.35,
+        ),
+    )
+
+
+def make_120_6x6_geometry() -> FilmGeometry:
+    # 120 film is approximately 61 mm wide.  A nominal 6x6 image area is
+    # about 56 x 56 mm.  Three frames per strip and four strips per sheet
+    # reproduce the familiar 12-exposure 6x6 contact-sheet arrangement.
+    return FilmGeometry(
+        film_format=FilmFormat.FILM_120_6X6,
+        film_height_mm=61.0,
+        strip_length_mm=184.0,
+        frame_w_mm=56.0,
+        frame_h_mm=56.0,
+        frame_pitch_mm=60.0,
+        frame_start_x_mm=4.0,
+        strips_per_sheet=4,
+        frames_per_strip=3,
+        default_film_name="KODAK PORTRA 160 6059",
+    )
+
+
+def parse_film_format(value: str) -> FilmFormat:
+    aliases = {
+        "35": FilmFormat.MM35,
+        "35mm": FilmFormat.MM35,
+        "120": FilmFormat.FILM_120_6X6,
+        "6x6": FilmFormat.FILM_120_6X6,
+        "120-6x6": FilmFormat.FILM_120_6X6,
+    }
+
+    key = value.strip().lower()
+    if key not in aliases:
+        raise argparse.ArgumentTypeError(
+            "film format must be '35mm' or '120-6x6'"
+        )
+
+    return aliases[key]
+
+
+def get_film_geometry(film_format: FilmFormat) -> FilmGeometry:
+    if film_format == FilmFormat.MM35:
+        return make_35mm_geometry()
+
+    if film_format == FilmFormat.FILM_120_6X6:
+        return make_120_6x6_geometry()
+
+    raise ValueError(f"Unsupported film format: {film_format}")
 
 
 @dataclass(frozen=True)
@@ -109,7 +186,7 @@ def load_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def compute_layout(options: RenderOptions, geometry: Film35mmGeometry) -> SheetLayout:
+def compute_layout(options: RenderOptions, geometry: FilmGeometry) -> SheetLayout:
     sheet_w = options.output_width if options.output_width else int(options.dpi * 8)
     sheet_h = int(sheet_w * 10 / 8)
 
@@ -214,7 +291,7 @@ def draw_film_base(
     x: int,
     y: int,
     ppm: float,
-    geometry: Film35mmGeometry,
+    geometry: FilmGeometry,
     theme: ContactSheetTheme,
 ) -> None:
     w = int(geometry.strip_length_mm * ppm)
@@ -241,29 +318,33 @@ def draw_film_base(
         )
 
 
-def draw_sprockets(
+def draw_35mm_sprockets(
     draw: ImageDraw.ImageDraw,
     x: int,
     y: int,
     ppm: float,
-    geometry: Film35mmGeometry,
+    geometry: FilmGeometry,
     theme: ContactSheetTheme,
 ) -> None:
-    first_perf_x = 3.0
-    count = int((geometry.strip_length_mm - 6.0) / geometry.perf_pitch_mm)
+    sprockets = geometry.sprockets
+    if sprockets is None:
+        return
+
+    count = int(
+        (geometry.strip_length_mm - 2 * sprockets.first_center_x_mm)
+        / sprockets.pitch_mm
+    )
+    bottom_center_y_mm = geometry.film_height_mm - sprockets.center_y_top_mm
 
     for i in range(count):
-        cx_mm = first_perf_x + i * geometry.perf_pitch_mm
+        cx_mm = sprockets.first_center_x_mm + i * sprockets.pitch_mm
 
-        for cy_mm in (
-            geometry.perf_center_y_top_mm,
-            geometry.perf_center_y_bottom_mm,
-        ):
+        for cy_mm in (sprockets.center_y_top_mm, bottom_center_y_mm):
             box = mm_rect(
-                cx_mm - geometry.perf_w_mm / 2,
-                cy_mm - geometry.perf_h_mm / 2,
-                geometry.perf_w_mm,
-                geometry.perf_h_mm,
+                cx_mm - sprockets.width_mm / 2,
+                cy_mm - sprockets.height_mm / 2,
+                sprockets.width_mm,
+                sprockets.height_mm,
                 x,
                 y,
                 ppm,
@@ -278,13 +359,25 @@ def draw_sprockets(
             )
 
 
+def draw_film_details(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    y: int,
+    ppm: float,
+    geometry: FilmGeometry,
+    theme: ContactSheetTheme,
+) -> None:
+    if geometry.film_format == FilmFormat.MM35:
+        draw_35mm_sprockets(draw, x, y, ppm, geometry, theme)
+
+
 def draw_frame_opening(
     draw: ImageDraw.ImageDraw,
     x: int,
     y: int,
     ppm: float,
     frame_x_mm: float,
-    geometry: Film35mmGeometry,
+    geometry: FilmGeometry,
     theme: ContactSheetTheme,
 ) -> list[int]:
     frame_y_mm = (geometry.film_height_mm - geometry.frame_h_mm) / 2
@@ -321,14 +414,14 @@ def draw_text_centered(
     draw.text((center_x - text_w // 2, y), text, fill=fill, font=font)
 
 
-def draw_edge_markings(
+def draw_35mm_edge_markings(
     draw: ImageDraw.ImageDraw,
     x: int,
     y: int,
     ppm: float,
     frame_numbers: Sequence[int],
     options: RenderOptions,
-    geometry: Film35mmGeometry,
+    geometry: FilmGeometry,
     theme: ContactSheetTheme,
 ) -> None:
     edge_font = load_font(max(8, int(0.78 * ppm)), bold=True)
@@ -365,6 +458,91 @@ def draw_edge_markings(
             num_font,
             theme.edge_text,
         )
+
+
+def draw_120_edge_markings(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    y: int,
+    ppm: float,
+    frame_numbers: Sequence[int],
+    options: RenderOptions,
+    geometry: FilmGeometry,
+    theme: ContactSheetTheme,
+) -> None:
+    # 120 film has no sprocket holes.  Its edge information occupies the narrow
+    # clear lanes above and below the image area.  The frame numbers and small
+    # triangular index marks are modeled after typical 120 edge printing, while
+    # the film name is repeated along the opposite edge.
+    edge_font = load_font(max(8, int(0.72 * ppm)), bold=True)
+    num_font = load_font(max(8, int(0.78 * ppm)), bold=True)
+
+    frame_y_mm = (geometry.film_height_mm - geometry.frame_h_mm) / 2
+    top_margin_y = y + max(1, int(0.25 * ppm))
+    bottom_margin_y = y + int(
+        (frame_y_mm + geometry.frame_h_mm + 0.30) * ppm
+    )
+
+    triangle_w = max(2, int(0.65 * ppm))
+    triangle_h = max(2, int(0.45 * ppm))
+
+    for i, n in enumerate(frame_numbers):
+        frame_x_mm = geometry.frame_start_x_mm + i * geometry.frame_pitch_mm
+        center_x = x + int((frame_x_mm + geometry.frame_w_mm / 2) * ppm)
+
+        draw_text_centered(
+            draw,
+            center_x,
+            top_margin_y,
+            str(n),
+            num_font,
+            theme.edge_text,
+        )
+
+        marker_x = center_x + int(geometry.frame_w_mm * 0.22 * ppm)
+        marker_y = y + max(1, int(0.55 * ppm))
+        draw.polygon(
+            [
+                (marker_x, marker_y),
+                (marker_x + triangle_w, marker_y),
+                (marker_x + triangle_w // 2, marker_y + triangle_h),
+            ],
+            fill=theme.edge_text,
+        )
+
+        draw_text_centered(
+            draw,
+            center_x,
+            bottom_margin_y,
+            options.film_name,
+            edge_font,
+            theme.edge_text,
+        )
+
+
+def draw_edge_markings(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    y: int,
+    ppm: float,
+    frame_numbers: Sequence[int],
+    options: RenderOptions,
+    geometry: FilmGeometry,
+    theme: ContactSheetTheme,
+) -> None:
+    if geometry.film_format == FilmFormat.MM35:
+        draw_35mm_edge_markings(
+            draw, x, y, ppm, frame_numbers, options, geometry, theme
+        )
+        return
+
+    if geometry.film_format == FilmFormat.FILM_120_6X6:
+        draw_120_edge_markings(
+            draw, x, y, ppm, frame_numbers, options, geometry, theme
+        )
+        return
+
+    raise ValueError(f"Unsupported film format: {geometry.film_format}")
 
 
 def draw_image_frame(
@@ -409,7 +587,7 @@ def draw_strip(
     sheet_number: int,
     layout: SheetLayout,
     options: RenderOptions,
-    geometry: Film35mmGeometry,
+    geometry: FilmGeometry,
     theme: ContactSheetTheme,
     error_font: ImageFont.ImageFont,
 ) -> tuple[int, int, list[int]]:
@@ -430,7 +608,7 @@ def draw_strip(
     ]
 
     draw_film_base(draw, strip_x, strip_y, ppm, geometry, theme)
-    draw_sprockets(draw, strip_x, strip_y, ppm, geometry, theme)
+    draw_film_details(draw, strip_x, strip_y, ppm, geometry, theme)
 
     for frame_idx in range(geometry.frames_per_strip):
         img_idx = strip_idx * geometry.frames_per_strip + frame_idx
@@ -465,7 +643,7 @@ def make_sheet(
     output_path: Path,
     sheet_number: int,
     options: RenderOptions,
-    geometry: Film35mmGeometry,
+    geometry: FilmGeometry,
     theme: ContactSheetTheme,
 ) -> None:
     layout = compute_layout(options, geometry)
@@ -585,10 +763,21 @@ def collect_images(image_dir: Path) -> list[Path]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create realistic 35mm photographic contact sheets"
+        description="Create realistic photographic contact sheets for 35mm or 120 film"
     )
 
     parser.add_argument("image_directory", help="directory containing source images")
+
+    parser.add_argument(
+        "--film-format",
+        type=parse_film_format,
+        default=FilmFormat.MM35,
+        metavar="{35mm,120-6x6}",
+        help=(
+            "film format to simulate; '120' and '6x6' are accepted aliases "
+            "for '120-6x6' [default is 35mm]"
+        ),
+    )
 
     size_group = parser.add_mutually_exclusive_group()
 
@@ -625,8 +814,12 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--film-name",
-        default="KODAK SAFETY FILM 5035",
-        help="film-edge name to print along the top sprocket margin/lane",
+        default=None,
+        help=(
+            "film-edge name to print; the default depends on --film-format "
+            "('KODAK SAFETY FILM 5035' for 35mm, "
+            "'KODAK PORTRA 160 6059' for 120-6x6)"
+        ),
     )
 
     parser.add_argument(
@@ -644,7 +837,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def make_options(args: argparse.Namespace) -> RenderOptions:
+def make_options(args: argparse.Namespace, geometry: FilmGeometry) -> RenderOptions:
     image_dir = Path(args.image_directory).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser().resolve()
 
@@ -667,13 +860,14 @@ def make_options(args: argparse.Namespace) -> RenderOptions:
         contact_blur=args.contact_blur,
         rotate_portrait_ccw=args.rotate_portrait_ccw,
         prefix=args.prefix,
-        film_name=args.film_name,
+        film_name=args.film_name or geometry.default_film_name,
     )
 
 
 def main() -> None:
     args = parse_args()
-    options = make_options(args)
+    geometry = get_film_geometry(args.film_format)
+    options = make_options(args, geometry)
 
     if not options.image_directory.is_dir():
         raise SystemExit(f"Not a directory: {options.image_directory}")
@@ -685,7 +879,6 @@ def main() -> None:
     if not images:
         raise SystemExit(f"No images found in {options.image_directory}")
 
-    geometry = Film35mmGeometry()
     theme = ContactSheetTheme()
 
     batches = [
