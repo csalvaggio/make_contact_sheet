@@ -92,7 +92,7 @@ The simulated 120 6x6 layout contains three frames per strip and four strips per
 The default simulated film-edge markings depend on the selected film format:
 
 - 35mm: `KODAK SAFETY FILM 5035`
-- 120 6x6: `KODAK 200`
+- 120 6x6: `KODAK PORTRA 160 6059`
 
 The film-edge name may be overridden with `--film-name`:
 
