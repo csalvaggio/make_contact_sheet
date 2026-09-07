@@ -76,12 +76,6 @@ To create a 120 6x6 contact sheet:
 python3 make_contact_sheet.py images --film-format 120-6x6
 ```
 
-The aliases `120` and `6x6` may also be used:
-
-```bash
-python3 make_contact_sheet.py images --film-format 120
-```
-
 The simulated 120 6x6 layout contains three frames per strip and four strips per sheet, for a total of 12 frames per contact sheet.
 
 | Film format | Frames per strip | Strips per sheet | Frames per sheet |
@@ -98,7 +92,7 @@ The film-edge name may be overridden with `--film-name`:
 
 ```bash
 python3 make_contact_sheet.py images \
-    --film-format 120 \
+    --film-format 120-6x6 \
     --film-name "ILFORD FP5 PLUS"
 ```
 
